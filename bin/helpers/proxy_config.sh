@@ -3,25 +3,19 @@ set -euo pipefail
 source "$(dirname "$0")/../../lib.sh"
 
 MANIFEST="manifest.yml"
-TS_FRIENDLY_NAME="${TS_FRIENDLY_NAME:-myhost}"
-OUTPUT="tsdproxy.routes.json"
-routes=()
+TEMPLATE_PATH="tsdproxy/tsdproxy.routes.json.template"
+OUTPUT_PATH="tsdproxy/tsdproxy.routes.json"
 
-routes+=("{\"subdomain\":\"infra.grafana.${TS_FRIENDLY_NAME}\",\"target\":\"http://localhost:3000\"}")
+if [[ -f "$TEMPLATE_PATH" ]]; then
+  log_info "🔐 Injecting tsdproxy.routes.json from template"
+  op inject -i "$TEMPLATE_PATH" -o "$OUTPUT_PATH"
+else
+  log_warn "⚠️  No tsdproxy.routes.json.template found at $TEMPLATE_PATH"
+fi
 
-project_count=$(yq e '.projects | length' "$MANIFEST")
-for i in $(seq 0 $((project_count - 1))); do
-  app=$(yq e ".projects[$i].name" "$MANIFEST")
-  env_name_ref=$(yq e ".projects[$i].env_name // \"dev\"" "$MANIFEST")
-  env_name=$(resolve_secret "$env_name_ref")
-  port=$(resolve_expose_port "$i" "$app")
+log_success "✅ Tailscale proxy config written to $OUTPUT_PATH"
 
-  routes+=("{\"subdomain\":\"${env_name}.${app}.${TS_FRIENDLY_NAME}\",\"target\":\"http://localhost:${port}\"}")
-done
-
-echo -e "{\n  \"routes\": [\n    $(IFS=,; echo "${routes[*]}")\n  ]\n}" > "$OUTPUT"
-log_success "Tailscale proxy config written to $OUTPUT"
-
+# Restart tsdproxy if it's running
 if docker ps --format '{{.Names}}' | grep -q '^tsdproxy$'; then
   log_info "♻️ Restarting tsdproxy..."
   docker restart tsdproxy
