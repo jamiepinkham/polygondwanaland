@@ -1,16 +1,8 @@
 {
   "routes": [
     {
-      "subdomain": "infra.grafana.{{op://polygondwanaland/tsdproxy/hostname}}",
-      "target": "http://localhost:3000"
-    },
-    {
-      "subdomain": "dev.players.{{op://polygondwanaland/tsdproxy/hostname}}",
-      "target": "http://localhost:4567"
-    },
-    {
-      "subdomain": "tsdproxy.{{op://polygondwanaland/tsdproxy/hostname}}",
-      "target": "http://localhost:3001"
+      "subdomain": "linux-shell.{{op://polygondwanaland/tsdproxy/hostname}}",
+      "target": "http://localhost:7681"
     }
   ]
 }

@@ -1,0 +1,12 @@
+castle:
+  proxy: true
+  metrics: false
+
+  projects:
+    - name: linux-shell
+      source:
+        type: image
+        image: tsl0922/ttyd
+      expose_port: 7681
+      env_name: dev
+      command: -c stu:joey bash

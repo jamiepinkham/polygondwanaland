@@ -5,11 +5,11 @@ source "$(dirname "$0")/../../lib.sh"
 MANIFEST="manifest.yml"
 require_tool yq
 
-project_count=$(yq e '.projects | length' "$MANIFEST")
+project_count=$(yq e '.castle.projects | length' "$MANIFEST")
 for i in $(seq 0 $((project_count - 1))); do
-  name=$(yq e ".projects[$i].name" "$MANIFEST")
-  path=$(yq e ".projects[$i].path" "$MANIFEST")
-  compose_file=$(yq e ".projects[$i].compose // \"docker-compose.yml\"" "$MANIFEST")
+  name=$(yq e ".castle.projects[$i].name" "$MANIFEST")
+  path=$(yq e ".castle.projects[$i].path" "$MANIFEST")
+  compose_file=$(yq e ".castle.projects[$i].compose // \"docker-compose.yml\"" "$MANIFEST")
 
   if [[ -d "$path" ]]; then
     log_info "🔽 Stopping $name"
@@ -25,3 +25,14 @@ for i in $(seq 0 $((project_count - 1))); do
     log_warn "Skipping $name — path $path not found"
   fi
 done
+
+
+if [[ "$(yq e '.castle.proxy' "$MANIFEST")" == "true" ]]; then
+  log_info "🧹 Stopping tsdproxy..."
+  docker compose -f tsdproxy/docker-compose.yml down || true
+fi
+
+if [[ "$(yq e '.castle.metrics' "$MANIFEST")" == "true" ]]; then
+  log_info "🧹 Stopping metrics stack..."
+  docker compose -f metrics/docker-compose.yml down || true
+fi
