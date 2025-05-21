@@ -1,0 +1,12 @@
+{
+  "routes": [
+    {
+      "subdomain": "dev.players.the-silver-cord",
+      "target": "http://localhost:4567"
+    },
+    {
+      "subdomain": "infra.grafana.the-silver-cord",
+      "target": "http://localhost:3000"
+    }
+  ]
+}

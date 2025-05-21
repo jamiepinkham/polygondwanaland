@@ -1,0 +1,33 @@
+projects:
+  - name: players
+    source:
+      type: git
+      url: https://github.com/your-org/players.git
+      path: players
+      auth:
+        type: oauth
+        token: op://vault/github/oauth-token
+    compose: docker-compose.yml
+    env: op://vault/players/env-file
+    env_name: op://vault/players/env-name
+    expose_port: 4567
+
+  - name: dashboard
+    source:
+      type: local
+      path: observability
+    compose: docker-compose.yml
+    env: environments/dashboard/.env
+    env_name: dashboard
+    expose_port: 3000
+  
+  - name: secrets
+    source:
+      type: local
+      path: secrets
+    compose: docker-compose.yml
+    env: environments/secrets/.env
+    env_name: dev
+    expose_port: 8080
+    secret_source: op://polygondwanaland/op-connect/secrets-json
+
