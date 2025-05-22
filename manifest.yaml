@@ -1,7 +1,7 @@
 castle:
   proxy:
-    enabled: true # true
-    ts_friendly_name: cuscus-morpho.ts.net
+    enabled: false # true
+    # ts_friendly_name: cuscus-morpho.ts.net
   metrics: false
   secrets: false
 

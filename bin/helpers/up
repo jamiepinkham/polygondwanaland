@@ -32,79 +32,95 @@ for i in $(seq 0 $((project_count - 1))); do
   compose_file=$(yq e ".castle.projects[$i].compose // \"docker-compose.yml\"" "$MANIFEST")
 
   env_file=$(resolve_secret "$(yq e '.castle.projects[$i].env // ""' "$MANIFEST")")
-  expose_port=$(yq e ".castle.projects[$i].expose_port // 0" "$MANIFEST")
-  listen_port=$(yq e ".castle.projects[$i].listen_port // 80" "$MANIFEST")
+  default_port=$((4000 + i))
+  expose_port=$(yq e ".castle.projects[$i].expose_port // $default_port" "$MANIFEST")
+  listen_port=$(yq e ".castle.projects[$i].listen_port // $default_port" "$MANIFEST")
 
   if [[ "$source_type" == "git" ]]; then
-  repo_url=$(yq e ".castle.projects[$i].source.url" "$MANIFEST")
-  auth_type=$(yq e '.castle.projects[$i].source.auth.type // ""' "$MANIFEST")
+    repo_url=$(yq e ".castle.projects[$i].source.url" "$MANIFEST")
+    auth_type=$(yq e '.castle.projects[$i].source.auth.type // ""' "$MANIFEST")
 
-  if [[ "$auth_type" == "oauth" ]]; then
+    if [[ "$auth_type" == "oauth" ]]; then
     token=$(resolve_secret "$(yq e ".castle.projects[$i].source.auth.token" "$MANIFEST")")
     repo_url="https://oauth:${token}@${repo_url#https://}"
-  elif [[ "$auth_type" == "basic" ]]; then
+    elif [[ "$auth_type" == "basic" ]]; then
     user=$(resolve_secret "$(yq e ".castle.projects[$i].source.auth.username" "$MANIFEST")")
     token=$(resolve_secret "$(yq e ".castle.projects[$i].source.auth.token" "$MANIFEST")")
     repo_url="https://${user}:${token}@${repo_url#https://}"
-  fi
+    fi
 
-  if [[ -d "$path" ]]; then
+    if [[ -d "$path" ]]; then
     log_info "🧹 Removing existing repo at $path"
     rm -rf "$path"
+    fi
+
+    branch=$(yq e ".castle.projects[$i].source.branch // \"\"" "$MANIFEST")
+    [[ -n "$branch" ]] && clone_args+=("-b" "$branch")
+    git clone "${clone_args[@]}" "$repo_url" "$path"
   fi
+  if [[ "$source_type" == "local" || "$source_type" == "git" ]]; then
+    label_args=()
+    port_args=()
+    log_info "📂 Using local path: $path"
+    validate_compose_file "$path" "$compose_file"
+    log_info "🔼 Starting $name"
+    pushd "$path" >/dev/null
 
-  branch=$(yq e ".castle.projects[$i].source.branch // \"\"" "$MANIFEST")
-  [[ -n "$branch" ]] && clone_args+=("-b" "$branch")
-  git clone "${clone_args[@]}" "$repo_url" "$path"
-fi
+    proxy_enabled=$(yq e '.castle.proxy.enabled == true' "$MANIFEST")
+    if [[ "$proxy_enabled" == "true" ]]; then
+      label_args+=(
+        --label "tsdproxy.enable=true"
+        --label "tsdproxy.name=$name"
+        --label "tsdproxy.port=$listen_port"
+      )
+    fi
+    if [[ "$expose_port" -ne 0 ]]; then
+      port_args+=(-p "${expose_port}:${listen_port}")
+    fi
+    if [[ "$proxy_enabled" == "true" ]]; then
+      docker compose -f "$compose_file" ${env_file:+--env-file "$env_file"} up -d "${label_args[@]:-}" "${port_args[@]:-}"
+    else
+      docker compose -f "$compose_file" ${env_file:+--env-file "$env_file"} up -d "${port_args[@]:-}"
+    fi
+    popd >/dev/null
+  elif [[ "$source_type" == "image" ]]; then
+    label_args=()
+    port_args=()
+    image=$(yq e ".castle.projects[$i].source.image" "$MANIFEST" | xargs)
+    command=$(yq e '.castle.projects[$i].command // ""' "$MANIFEST" | xargs)
+    log_info "🐳 Running image $image for $name"
 
-if [[ "$source_type" == "local" || "$source_type" == "git" ]]; then
-  log_info "📂 Using local path: $path"
-  validate_compose_file "$path" "$compose_file"
-  log_info "🔼 Starting $name"
-  pushd "$path" >/dev/null
+    proxy_enabled=$(yq e '.castle.proxy.enabled == true' "$MANIFEST")
+    default_port=$((4000 + i))
+    expose_port=$(yq e ".castle.projects[$i].expose_port // $default_port" "$MANIFEST")
+    listen_port=$(yq e ".castle.projects[$i].listen_port // $default_port" "$MANIFEST")
 
-  proxy_enabled=$(yq e '.castle.proxy.enabled == true' "$MANIFEST")
-  label_args=()
-  if [[ "$proxy_enabled" == "true" ]]; then
-    label_args+=(
-      --label "tsdproxy.enable=true"
-      --label "tsdproxy.name=$name"
-      --label "tsdproxy.port=$port"
-    )
+    if [[ "$proxy_enabled" == "true" ]]; then
+      label_args+=(
+        --label "tsdproxy.enable=true"
+        --label "tsdproxy.name=$name"
+        --label "tsdproxy.port=$listen_port"
+      )
+    fi
+
+    if [[ "$expose_port" -ne 0 ]]; then
+      port_args+=(-p "${expose_port}:${listen_port}")
+    fi
+    if [[ -n "$command" ]]; then
+      if [[ "$proxy_enabled" == "true" ]]; then
+        docker run -d --name "$name" "${port_args[@]}" "${label_args[@]}" "$image" bash -c "$command"
+      else
+        docker run -d --name "$name" "${port_args[@]}" "$image"
+      fi
+    else
+      if [[ "$proxy_enabled" == "true" ]]; then
+        docker run -d --name "$name" "${port_args[@]}" "${label_args[@]}" "$image" bash -c "$command"
+      else
+        docker run -d --name "$name" "${port_args[@]}" "$image"
+      fi
+    fi
+  else
+    log_error "Unsupported source type: $source_type"
+    exit 1
   fi
-
-  port_args=()
-  if [[ "$expose_port" -ne 0 ]]; then
-    port_args+=(-p "${expose_port}:${listen_port}")
-  fi
-  docker compose -f "$compose_file" ${env_file:+--env-file "$env_file"} up -d "${label_args[@]}" "${port_args[@]}"
-
-  popd >/dev/null
-
-elif [[ "$source_type" == "image" ]]; then
-  image=$(yq e ".castle.projects[$i].source.image" "$MANIFEST")
-  command=$(yq e '.castle.projects[$i].command // ""' "$MANIFEST")
-  log_info "🐳 Running image $image for $name"
-
-  proxy_enabled=$(yq e '.castle.proxy.enabled == true' "$MANIFEST")
-  label_args=()
-  if [[ "$proxy_enabled" == "true" ]]; then
-    label_args+=(
-      --label "tsdproxy.enable=true"
-      --label "tsdproxy.name=$name"
-      --label "tsdproxy.port=$listen_port"
-    )
-  fi
-  port_args=()
-  if [[ "$expose_port" -ne 0 ]]; then
-    port_args+=(-p "${expose_port}:${listen_port}")
-  fi
-  docker run -d --name "$name" "${port_args[@]}" "${label_args[@]}" "$image" $command
-
-else
-  log_error "Unsupported source type: $source_type"
-  exit 1
-fi
-
 done
