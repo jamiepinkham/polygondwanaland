@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$(dirname "$(realpath "$0")")")/lib.sh"
+
+MANIFEST="${1:-$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")/manifest.yaml}"
+require_tool yq
+
+project_count=$(yq e '.castle.projects | length' "$MANIFEST")
+
+for i in $(seq 0 $((project_count - 1))); do
+  name=$(yq e ".castle.projects[$i].name" "$MANIFEST")
+  source_type=$(yq e ".castle.projects[$i].source.type" "$MANIFEST")
+  path=$(yq e ".castle.projects[$i].source.path // \"\"" "$MANIFEST")
+  compose_file=$(yq e ".castle.projects[$i].compose // \"docker-compose.yml\"" "$MANIFEST")
+
+  if [[ "$source_type" == "image" ]]; then
+    log_info "🐳 Stopping image container: $name"
+    docker rm -f "$name" || true
+    continue
+  fi
+
+  if [[ -d "$path" ]]; then
+    log_info "🔽 Stopping $name"
+    pushd "$path" >/dev/null
+    docker compose -f "$compose_file" down "$@"
+    if [[ -f "$path/secrets.json" ]]; then
+      log_info "🧹 Removing injected secrets.json from $path"
+      rm -f "$path/secrets.json"
+    fi
+    popd >/dev/null
+  else
+    log_warn "Skipping $name — path $path not found"
+  fi
+done
+
+
+
+if [[ "$(yq e '.castle.proxy' "$MANIFEST")" == "true" ]]; then
+  log_info "🧹 Stopping tsdproxy..."
+  docker compose -f tsdproxy/docker-compose.yml down || true
+fi
+
+if [[ "$(yq e '.castle.metrics' "$MANIFEST")" == "true" ]]; then
+  log_info "🧹 Stopping metrics stack..."
+  docker compose -f metrics/docker-compose.yml down || true
+fi
+
+if [[ "$(yq e '.castle.secrets' "$MANIFEST")" == "true" ]]; then
+  log_info "🧹 Stopping secrets stack..."
+  docker compose -f secrets/docker-compose.yml down || true
+fi
