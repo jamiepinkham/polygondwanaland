@@ -3,19 +3,50 @@ set -euo pipefail
 source "$(dirname "$(dirname "$(realpath "$0")")")/lib.sh"
 
 MANIFEST="${1:-$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")/manifest.yaml}"
-TEMPLATE_PATH="tsdproxy/tsdproxy.routes.json.template"
 OUTPUT_PATH="tsdproxy/tsdproxy.routes.json"
 
-if [[ -f "$TEMPLATE_PATH" ]]; then
-  log_info "🔐 Injecting tsdproxy.routes.json from template"
-  op inject -i "$TEMPLATE_PATH" -o "$OUTPUT_PATH"
-else
-  log_warn "⚠️  No tsdproxy.routes.json.template found at $TEMPLATE_PATH"
+ts_friendly_name=$(yq e '.castle.proxy.ts_friendly_name // ""' "$MANIFEST")
+use_proxy=$(yq e '.castle.proxy.enabled // false' "$MANIFEST")
+use_metrics=$(yq e '.castle.metrics // false' "$MANIFEST")
+use_secrets=$(yq e '.castle.secrets // false' "$MANIFEST")
+
+if [[ "$use_proxy" != "true" ]]; then
+  log_warn "⚠️ Proxy is disabled in the manifest. Skipping route generation."
+  exit 0
 fi
+
+log_info "🛠 Generating tsdproxy.routes.json with ts_friendly_name: $ts_friendly_name"
+
+echo '{ "routes": [' > "$OUTPUT_PATH"
+
+project_count=$(yq e '.castle.projects | length' "$MANIFEST")
+for i in $(seq 0 $((project_count - 1))); do
+  name=$(yq e ".castle.projects[$i].name" "$MANIFEST")
+  port=$(yq e ".castle.projects[$i].expose_port // 80" "$MANIFEST")
+  if [[ -z "$port" || "$port" == "null" ]]; then
+    port=$((49152 + i))
+    log_warn "⚠️  Project '$name' has no expose_port. Using random port $port."
+  fi
+
+  echo "  {"subdomain": "${name}.${ts_friendly_name}", "target": "http://localhost:${port}"}," >> "$OUTPUT_PATH"
+done
+
+echo "  {"subdomain": "tsdproxy.${ts_friendly_name}", "target": "http://localhost:3001"}" >> "$OUTPUT_PATH"
+
+if [[ "$use_metrics" == "true" ]]; then
+  echo "," >> "$OUTPUT_PATH"
+  echo "  {"subdomain": "metrics.${ts_friendly_name}", "target": "http://localhost:3000"}" >> "$OUTPUT_PATH"
+fi
+
+if [[ "$use_secrets" == "true" ]]; then
+  echo "," >> "$OUTPUT_PATH"
+  echo "  {"subdomain": "secrets.${ts_friendly_name}", "target": "http://localhost:8080"}" >> "$OUTPUT_PATH"
+fi
+
+echo '] }' >> "$OUTPUT_PATH"
 
 log_success "✅ Tailscale proxy config written to $OUTPUT_PATH"
 
-# Restart tsdproxy if it's running
 if docker ps --format '{{.Names}}' | grep -q '^tsdproxy$'; then
   log_info "♻️ Restarting tsdproxy..."
   docker restart tsdproxy
