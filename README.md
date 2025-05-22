@@ -27,74 +27,51 @@ castle/
     ├── down.sh
     ├── proxy_config.sh
     └── setup.sh
+metrics (metrics.ts_friendly_name/localhost:3000)
+├── docker-compose.yaml   # compose file for grafana/tempo/loki
+secrets (secrets.ts_friendly_name/localhost:8080)
+├── docker-compose.yaml   # compose file for 1password connect 
+├── secrets.json          # excluded by .gitignore
+proxy (proxy.ts_friendly_name/localhost:3000)
+├── docker-compose.yaml   # compose file for tsdproxy
+├── config
+    ├── .auth_key         # ts auth key, excluded by .gitignore
+    ├── tsdproxy.yaml
 
-manifest.yml           # defines projects to deploy
+manifest.yml              # defines projects to deploy
 ```
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Prerequisites
+### Prerequisites
 
 - Docker + Docker Compose
 - [1Password CLI](https://developer.1password.com/docs/cli)
 - [yq](https://github.com/mikefarah/yq)
 
-### 2. Environment Setup
-
-### 3. Launch
-
-```bash
-castle up            # Deploy all apps from manifest
-castle down          # Tear down all containers
-```
-
----
 
 ## 📜 Manifest Example (`manifest.yml`)
 
 ```yaml
-projects:
-  - name: players
-    source:
-      type: git
-      url: https://github.com/your-org/players.git
-      path: players
-      auth:
-        type: oauth
-        token: op://vault/github/oauth-token
-    compose: docker-compose.yml
-    env: environments/players/.env
-    expose_port: 4567
 
-  - name: dashboard
-    source:
-      type: local
-      path: services/dashboard
-    compose: docker-compose.yml
-    env: environments/dashboard/.env
-    env_name: dashboard
-    expose_port: 3000
-```
+castle:
+  proxy:
+    enabled: true
+      ts_friendly_name: friendly-name.ts.net
+  metrics: true #spins up grafana on 3000
+  secrets: false #spins up 1pw connect on 8080
 
----
+  projects:
+    - name: linux-shell
+      source:
+        type: image
+        image: tsl0922/ttyd
+      expose_port: 7681
+      listen_port: 80
+      env_name: dev
 
-## 🧪 CLI Reference
-
-```yaml
-projects:
-  - name: players
-    path: players
-    compose: docker-compose.yml
-    env: op://vault/players/env-file
-    env_name: op://vault/players/env-name
-    expose_port: 4567
-    git:
-      url: https://github.com/your-org/players.git
-      auth:
-        type: oauth
-        token: op://vault/github/oauth-token
 ```
 
 ---
@@ -105,10 +82,6 @@ projects:
 |--------------------------|------------------------------------------|
 | `up`                    | Deploy all projects from manifest        |
 | `down`                  | Stop all or specific projects            |
-| `reload-proxy`          | Regenerate and reload tsdproxy routes    |
-| `proxy_page`            | Open the tsdproxy UI in your browser     |
-| `secrets reveal <env>`  | Inject `.env` from 1Password templates   |
-
 ---
 
 ## 🧠 Philosophy
@@ -122,6 +95,6 @@ projects:
 
 ## 🪪 License
 
-MIT © [Your Name or Org]
+MIT © [Jamie Pinkham]
 
 Inspired by the musical and metaphysical layers of King Gizzard’s *Polygondwanaland*.
