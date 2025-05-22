@@ -1,7 +1,7 @@
 castle:
   proxy:
-    enabled: false # true
-    # ts_friendly_name: cuscus-morpho.ts.net
+    enabled: true
+    ts_friendly_name: cuscus-morpho.ts.net
   metrics: false
   secrets: false
 
@@ -13,3 +13,4 @@ castle:
       expose_port: 7681
       listen_port: 80
       env_name: dev
+      command: ttyd -c stu:joey bash
