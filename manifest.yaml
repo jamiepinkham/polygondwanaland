@@ -1,6 +1,7 @@
 castle:
-  proxy: true
+  proxy: false
   metrics: false
+  secrets: false
 
   projects:
     - name: linux-shell
@@ -9,4 +10,3 @@ castle:
         image: tsl0922/ttyd
       expose_port: 7681
       env_name: dev
-      command: -c stu:joey bash
