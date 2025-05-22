@@ -22,12 +22,6 @@ for i in $(seq 0 $((project_count - 1))); do
   env_file=$(resolve_secret "$(yq e '.castle.projects[$i].env // ""' "$MANIFEST")")
   port=$(resolve_expose_port "$i" "$name")
 
-  secret_ref=$(yq e '.castle.projects[$i].secret_source // ""' "$MANIFEST")
-  if [[ -n "$secret_ref" ]]; then
-    log_info "🔐 Injecting secrets.json for $name"
-    op read "$secret_ref" > "$path/secrets.json"
-  fi
-
   if [[ "$source_type" == "git" ]]; then
     repo_url=$(yq e ".castle.projects[$i].source.url" "$MANIFEST")
     auth_type=$(yq e '.castle.projects[$i].source.auth.type // ""' "$MANIFEST")
@@ -39,12 +33,16 @@ for i in $(seq 0 $((project_count - 1))); do
       token=$(resolve_secret "$(yq e ".castle.projects[$i].source.auth.token" "$MANIFEST")")
       repo_url="https://${user}:${token}@${repo_url#https://}"
     fi
-    if [[ ! -d "$path/.git" ]]; then
-      log_info "📦 Cloning $repo_url"
-      git clone "$repo_url" "$path"
-    else
-      log_info "✅ Repo already cloned: $path"
+    
+    if [[ -d "$path" ]]; then
+      log_info "🧹 Removing existing repo at $path"
+      rm -rf "$path"
     fi
+    
+    branch=$(yq e ".castle.projects[$i].source.branch // \"\"" "$MANIFEST")
+    [[ -n "$branch" ]] && clone_args+=("-b" "$branch")
+    git clone "${clone_args[@]}" "$repo_url" "$path"
+
   elif [[ "$source_type" == "local" ]]; then
     log_info "📂 Using local path: $path"
     validate_compose_file "$path" "$compose_file"
