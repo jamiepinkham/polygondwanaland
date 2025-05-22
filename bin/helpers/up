@@ -2,7 +2,8 @@
 set -euo pipefail
 source "$(dirname "$(dirname "$(realpath "$0")")")/lib.sh"
 MANIFEST="${1:-$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")/manifest.yaml}"
-
+ROOT_DIR="$(get_repo_root)"
+echo "ROOT_DIR=$ROOT_DIR"
 use_secrets=$(yq e '.castle.secrets // false' "$MANIFEST")
 if [[ "$use_secrets" == "true" ]]; then
   validate_connect_env_vars
@@ -12,6 +13,17 @@ require_tool yq
 require_tool git
 require_tool docker
 
+# Start global services
+if [[ "$(yq e '.castle.proxy.enabled' "$MANIFEST")" == "true" ]]; then
+  log_info "🚀 Starting tsdproxy..."
+  docker compose -f "${ROOT_DIR}/proxy/docker-compose.yaml" up -d
+fi
+
+if [[ "$(yq e '.castle.metrics' "$MANIFEST")" == "true" ]]; then
+  log_info "📈 Starting metrics stack..."
+  docker compose up -f "${ROOT_DIR}/metrics/docker-compose.yaml" -d
+fi
+
 project_count=$(yq e '.castle.projects | length' "$MANIFEST")
 for i in $(seq 0 $((project_count - 1))); do
   name=$(yq e ".castle.projects[$i].name" "$MANIFEST")
@@ -20,63 +32,79 @@ for i in $(seq 0 $((project_count - 1))); do
   compose_file=$(yq e ".castle.projects[$i].compose // \"docker-compose.yml\"" "$MANIFEST")
 
   env_file=$(resolve_secret "$(yq e '.castle.projects[$i].env // ""' "$MANIFEST")")
-  port=$(resolve_expose_port "$i" "$name")
+  expose_port=$(yq e ".castle.projects[$i].expose_port // 0" "$MANIFEST")
+  listen_port=$(yq e ".castle.projects[$i].listen_port // 80" "$MANIFEST")
 
   if [[ "$source_type" == "git" ]]; then
-    repo_url=$(yq e ".castle.projects[$i].source.url" "$MANIFEST")
-    auth_type=$(yq e '.castle.projects[$i].source.auth.type // ""' "$MANIFEST")
-    if [[ "$auth_type" == "oauth" ]]; then
-      token=$(resolve_secret "$(yq e ".castle.projects[$i].source.auth.token" "$MANIFEST")")
-      repo_url="https://oauth:${token}@${repo_url#https://}"
-    elif [[ "$auth_type" == "basic" ]]; then
-      user=$(resolve_secret "$(yq e ".castle.projects[$i].source.auth.username" "$MANIFEST")")
-      token=$(resolve_secret "$(yq e ".castle.projects[$i].source.auth.token" "$MANIFEST")")
-      repo_url="https://${user}:${token}@${repo_url#https://}"
-    fi
-    
-    if [[ -d "$path" ]]; then
-      log_info "🧹 Removing existing repo at $path"
-      rm -rf "$path"
-    fi
-    
-    branch=$(yq e ".castle.projects[$i].source.branch // \"\"" "$MANIFEST")
-    [[ -n "$branch" ]] && clone_args+=("-b" "$branch")
-    git clone "${clone_args[@]}" "$repo_url" "$path"
+  repo_url=$(yq e ".castle.projects[$i].source.url" "$MANIFEST")
+  auth_type=$(yq e '.castle.projects[$i].source.auth.type // ""' "$MANIFEST")
 
-  elif [[ "$source_type" == "local" ]]; then
-    log_info "📂 Using local path: $path"
-    validate_compose_file "$path" "$compose_file"
-    log_info "🔼 Starting $name"
-    pushd "$path" >/dev/null
-    docker compose -f "$compose_file" ${env_file:+--env-file "$env_file"} up -d
-    popd >/dev/null
-  elif [[ "$source_type" == "image" ]]; then
-    image=$(yq e ".castle.projects[$i].source.image" "$MANIFEST")
-    command=$(yq e '.castle.projects[$i].command // ""' "$MANIFEST")
-    log_info "🐳 Running image $image for $name"
-    docker run -d --name "$name" -p "${port}:80" $image $command
-  else
-    log_error "Unsupported source type: $source_type"
-    exit 1
+  if [[ "$auth_type" == "oauth" ]]; then
+    token=$(resolve_secret "$(yq e ".castle.projects[$i].source.auth.token" "$MANIFEST")")
+    repo_url="https://oauth:${token}@${repo_url#https://}"
+  elif [[ "$auth_type" == "basic" ]]; then
+    user=$(resolve_secret "$(yq e ".castle.projects[$i].source.auth.username" "$MANIFEST")")
+    token=$(resolve_secret "$(yq e ".castle.projects[$i].source.auth.token" "$MANIFEST")")
+    repo_url="https://${user}:${token}@${repo_url#https://}"
   fi
+
+  if [[ -d "$path" ]]; then
+    log_info "🧹 Removing existing repo at $path"
+    rm -rf "$path"
+  fi
+
+  branch=$(yq e ".castle.projects[$i].source.branch // \"\"" "$MANIFEST")
+  [[ -n "$branch" ]] && clone_args+=("-b" "$branch")
+  git clone "${clone_args[@]}" "$repo_url" "$path"
+fi
+
+if [[ "$source_type" == "local" || "$source_type" == "git" ]]; then
+  log_info "📂 Using local path: $path"
+  validate_compose_file "$path" "$compose_file"
+  log_info "🔼 Starting $name"
+  pushd "$path" >/dev/null
+
+  proxy_enabled=$(yq e '.castle.proxy.enabled == true' "$MANIFEST")
+  label_args=()
+  if [[ "$proxy_enabled" == "true" ]]; then
+    label_args+=(
+      --label "tsdproxy.enable=true"
+      --label "tsdproxy.name=$name"
+      --label "tsdproxy.port=$port"
+    )
+  fi
+
+  port_args=()
+  if [[ "$expose_port" -ne 0 ]]; then
+    port_args+=(-p "${expose_port}:${listen_port}")
+  fi
+  docker compose -f "$compose_file" ${env_file:+--env-file "$env_file"} up -d "${label_args[@]}" "${port_args[@]}"
+
+  popd >/dev/null
+
+elif [[ "$source_type" == "image" ]]; then
+  image=$(yq e ".castle.projects[$i].source.image" "$MANIFEST")
+  command=$(yq e '.castle.projects[$i].command // ""' "$MANIFEST")
+  log_info "🐳 Running image $image for $name"
+
+  proxy_enabled=$(yq e '.castle.proxy.enabled == true' "$MANIFEST")
+  label_args=()
+  if [[ "$proxy_enabled" == "true" ]]; then
+    label_args+=(
+      --label "tsdproxy.enable=true"
+      --label "tsdproxy.name=$name"
+      --label "tsdproxy.port=$listen_port"
+    )
+  fi
+  port_args=()
+  if [[ "$expose_port" -ne 0 ]]; then
+    port_args+=(-p "${expose_port}:${listen_port}")
+  fi
+  docker run -d --name "$name" "${port_args[@]}" "${label_args[@]}" "$image" $command
+
+else
+  log_error "Unsupported source type: $source_type"
+  exit 1
+fi
+
 done
-
-# Start global services
-if [[ "$(yq e '.castle.proxy' "$MANIFEST")" == "true" ]]; then
-  log_info "🚀 Starting tsdproxy..."
-  pushd tsdproxy > /dev/null
-  docker compose up -d
-  popd > /dev/null
-fi
-
-if [[ "$(yq e '.castle.metrics' "$MANIFEST")" == "true" ]]; then
-  log_info "📈 Starting metrics stack..."
-  pushd metrics > /dev/null
-  docker compose up -d
-  popd > /dev/null
-fi
-
-if [[ "$(yq e '.castle.proxy' "$MANIFEST")" == "true" ]]; then
-  log_info "🔁 Updating tsdproxy routes"
-  "$(dirname "$0")/proxy_config.sh"
-fi

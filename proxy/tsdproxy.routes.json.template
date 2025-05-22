@@ -1,8 +1,0 @@
-{
-  "routes": [
-    {
-      "subdomain": "linux-shell.{{op://polygondwanaland/tsdproxy/hostname}}",
-      "target": "http://localhost:7681"
-    }
-  ]
-}

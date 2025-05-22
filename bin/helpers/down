@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "$(dirname "$(realpath "$0")")")/lib.sh"
-
-MANIFEST="${1:-$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")/manifest.yaml}"
+ROOT_DIR="$(get_repo_root)"
+MANIFEST="${1:-${ROOT_DIR}/manifest.yaml}"
 require_tool yq
 
 project_count=$(yq e '.castle.projects | length' "$MANIFEST")
@@ -35,17 +35,17 @@ done
 
 
 
-if [[ "$(yq e '.castle.proxy' "$MANIFEST")" == "true" ]]; then
+if [[ "$(yq e '.castle.proxy.enabled' "$MANIFEST")" == "true" ]]; then
   log_info "🧹 Stopping tsdproxy..."
-  docker compose -f tsdproxy/docker-compose.yml down || true
+  docker compose -f "${ROOT_DIR}/proxy/docker-compose.yaml" down || true
 fi
 
 if [[ "$(yq e '.castle.metrics' "$MANIFEST")" == "true" ]]; then
   log_info "🧹 Stopping metrics stack..."
-  docker compose -f metrics/docker-compose.yml down || true
+  docker compose -f "${ROOT_DIR}/metrics/docker-compose.yaml" down || true
 fi
 
 if [[ "$(yq e '.castle.secrets' "$MANIFEST")" == "true" ]]; then
   log_info "🧹 Stopping secrets stack..."
-  docker compose -f secrets/docker-compose.yml down || true
+  docker compose -f "${ROOT_DIR}/secrets/docker-compose.yaml" down || true
 fi

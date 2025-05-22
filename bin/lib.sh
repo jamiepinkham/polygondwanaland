@@ -44,12 +44,12 @@ resolve_secret() {
   use_secrets=$(yq e '.castle.secrets // false' "$MANIFEST")
 
    if [[ "$use_secrets" == "true" ]]; then
+   ROOT_DIR="$(dirname "$(realpath "$0")")"
     # Ensure 1Password Connect is running
     if ! docker ps --format '{{.Names}}' | grep -q '^op-connect$'; then
       log_info "🔐 Starting 1Password Connect..."
       pushd secrets >/dev/null
-      docker compose up -d
-      popd >/dev/null
+      docker compose up -f "$ROOT_DIR/secrets/docker-compose.yaml" -d
     else
       log_info "✅ 1Password Connect is already running."
     fi
@@ -64,19 +64,6 @@ resolve_secret() {
     local key="${ref##*/}"
     read -p "🔐 Enter value for $key: " value
     echo "$value"
-  fi
-}
-
-resolve_expose_port() {
-  local index="$1"
-  local name="$2"
-
-  local override
-  override=$(yq e '.castle.projects[$index].expose_port // ""' "$MANIFEST")
-  if [[ -n "$override" && "$override" != "null" ]]; then
-    echo "$override"
-  else
-    echo $((4000 + index))
   fi
 }
 
@@ -109,12 +96,20 @@ ensure_1password_connect_running() {
   if [[ "$use_secrets" == "true" ]]; then
     if ! docker ps --format '{{.Names}}' | grep -q '^op-connect$'; then
       log_info "🔐 Starting 1Password Connect..."
-      pushd secrets >/dev/null
-      docker compose up -d
-      popd >/dev/null
+      docker compose up -f "../secrets/docker-compose.yaml" -d
     else
       log_info "✅ 1Password Connect is already running."
   fi
 fi
 
+}
+
+get_repo_root() {
+  local source="${BASH_SOURCE[0]}"
+  while [ -h "$source" ]; do
+    dir="$(cd -P "$(dirname "$source")" >/dev/null 2>&1 && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" != /* ]] && source="$dir/$source"
+  done
+  cd -P "$(dirname "$source")/.." >/dev/null 2>&1 && pwd
 }

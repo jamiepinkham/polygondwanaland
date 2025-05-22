@@ -40,24 +40,14 @@ manifest.yml           # defines projects to deploy
 - Docker + Docker Compose
 - [1Password CLI](https://developer.1password.com/docs/cli)
 - [yq](https://github.com/mikefarah/yq)
-- Tailscale running on the host (with `tsdproxy` exposed)
 
 ### 2. Environment Setup
-
-```bash
-export OP_CONNECT_HOST=http://localhost:8080
-export OP_CONNECT_TOKEN=your-connect-token
-export TS_FRIENDLY_NAME=your-tailscale-hostname
-```
 
 ### 3. Launch
 
 ```bash
-./castle/castle.sh up            # Deploy all apps from manifest
-./castle/castle.sh down          # Tear down all containers
-./castle/castle.sh reload-proxy  # Rebuild and reload tsdproxy config
-./castle/castle.sh proxy_page    # Open tsdproxy UI
-./castle/castle.sh secrets reveal dev
+castle up            # Deploy all apps from manifest
+castle down          # Tear down all containers
 ```
 
 ---
@@ -75,8 +65,7 @@ projects:
         type: oauth
         token: op://vault/github/oauth-token
     compose: docker-compose.yml
-    env: op://vault/players/env-file
-    env_name: op://vault/players/env-name
+    env: environments/players/.env
     expose_port: 4567
 
   - name: dashboard

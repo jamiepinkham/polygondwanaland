@@ -1,7 +1,7 @@
 castle:
   proxy:
-    enabled: false # true
-    # ts_friendly_name: cuscus-morpho.ts.net
+    enabled: true # true
+    ts_friendly_name: cuscus-morpho.ts.net
   metrics: false
   secrets: false
 
@@ -11,4 +11,5 @@ castle:
         type: image
         image: tsl0922/ttyd
       expose_port: 7681
+      listen_port: 80
       env_name: dev
