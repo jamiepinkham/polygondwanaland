@@ -1,18 +1,16 @@
 # 🏰 Polygondwanaland
 
-**Polygondwanaland** is a modular, manifest-driven infrastructure platform for self-hosted applications. It combines secrets management, observability, and private networking via [1Password Connect](https://developer.1password.com/docs/connect), [Grafana](https://grafana.com/), and [Tailscale](https://tailscale.com/).
+Polygondwanaland is a modular, manifest-driven infrastructure platform designed for self-hosting applications with ease and security. It integrates secrets management, observability, and private networking through a unified runtime powered by 1Password Connect, Grafana OSS, and Tailscale.
 
-The entire system is orchestrated with a custom CLI called `castle`.
+At the core of the platform is a custom CLI tool called castle, which reads a single manifest file to orchestrate your entire environment. This manifest defines:
 
----
+* Applications to run in Docker containers, including their sources, commands, ports, and runtime environments.
+* System-level services like:
+    * 🔐 Secrets from a self-hosted 1Password Connect instance
+    * 📈 Observability using Grafana, Loki, Tempo, and Prometheus
+    * 🌐 Proxying and HTTPS via Tailscale and an internal reverse proxy
 
-## ✨ Features
-
-- 🔒 **Secrets Management** with 1Password Connect
-- 📈 **Observability Stack** (Grafana, Loki, Tempo)
-- 🕵️‍♀️ **Private App Hosting** with Tailscale + tsdproxy
-- 📦 **Manifest-based Deployment** per project/environment
-- 🧰 **CLI-Driven Workflow** using the `castle` command
+With castle, you can bring up, manage, and observe your full stack from a single, declarative configuration.
 
 ---
 
@@ -31,13 +29,12 @@ metrics (metrics.ts_friendly_name/localhost:3000)
 ├── docker-compose.yaml   # compose file for grafana/tempo/loki
 secrets (secrets.ts_friendly_name/localhost:8080)
 ├── docker-compose.yaml   # compose file for 1password connect 
-├── secrets.json          # excluded by .gitignore
-proxy (proxy.ts_friendly_name/localhost:3000)
+├── secrets.json          # 1password connect auth, excluded by .gitignore
+proxy (proxy.ts_friendly_name/localhost:3001)
 ├── docker-compose.yaml   # compose file for tsdproxy
 ├── config
     ├── .auth_key         # ts auth key, excluded by .gitignore
     ├── tsdproxy.yaml
-
 manifest.yml              # defines projects to deploy
 ```
 
